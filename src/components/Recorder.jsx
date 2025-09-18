@@ -36,10 +36,20 @@ export default function Recorder({ onDone }) {
       setLoading(true);
       const form = new FormData();
       form.append("file", file);
-      const resp = await API.post("/upload", form, {
-        headers: { "Content-Type": "multipart/form-data" },
+
+      const token = localStorage.getItem("token"); // 👈 check auth
+      const headers = token
+        ? { Authorization: `Bearer ${token}` }
+        : {}; // free trial = no token
+
+      const resp = await API.post("/transcribe", form, {
+        headers: {
+          ...headers,
+          "Content-Type": "multipart/form-data",
+        },
       });
-      onDone && onDone(resp.data.record);  // Call the parent component's callback with the uploaded file
+
+      onDone && onDone(resp.data.record);
     } catch (err) {
       console.error(err);
       alert("Upload failed: " + (err?.response?.data?.error || err.message));
@@ -72,7 +82,9 @@ export default function Recorder({ onDone }) {
           />
           Upload audio
         </label>
-        {loading && <div className="text-sm text-gray-500">Transcribing...</div>}
+        {loading && (
+          <div className="text-sm text-gray-500">Transcribing...</div>
+        )}
       </div>
     </div>
   );
