@@ -1,91 +1,54 @@
 import { useState, useRef } from "react";
-import API from "../api";
+import axios from "axios";
 
-export default function Recorder({ onDone }) {
+export default function Recorder({ setTranscription }) {
   const [recording, setRecording] = useState(false);
-  const [loading, setLoading] = useState(false);
   const mediaRecorderRef = useRef(null);
-  const chunksRef = useRef([]);
+  const audioChunksRef = useRef([]);
 
-  async function startRecording() {
+  const startRecording = async () => {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const mr = new MediaRecorder(stream);
-    mediaRecorderRef.current = mr;
-    chunksRef.current = [];
-    mr.ondataavailable = (e) => chunksRef.current.push(e.data);
-    mr.start();
-    setRecording(true);
-  }
+    mediaRecorderRef.current = new MediaRecorder(stream);
 
-  function stopRecording() {
-    const mr = mediaRecorderRef.current;
-    if (!mr) return;
-    mr.onstop = async () => {
-      const blob = new Blob(chunksRef.current, { type: "audio/webm" });
-      const file = new File([blob], `recording_${Date.now()}.webm`, {
-        type: blob.type,
-      });
-      await uploadFile(file);
-      setRecording(false);
+    mediaRecorderRef.current.ondataavailable = (e) => {
+      audioChunksRef.current.push(e.data);
     };
-    mr.stop();
-  }
 
-  async function uploadFile(file) {
-    try {
-      setLoading(true);
-      const form = new FormData();
-      form.append("file", file);
+    mediaRecorderRef.current.onstop = async () => {
+      const blob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+      const file = new File([blob], "recording.webm", { type: "audio/webm" });
 
-      const token = localStorage.getItem("token"); // 👈 check auth
-      const headers = token
-        ? { Authorization: `Bearer ${token}` }
-        : {}; // free trial = no token
+      const formData = new FormData();
+      formData.append("audio", file);
 
-      const resp = await API.post("/transcribe", form, {
-        headers: {
-          ...headers,
-          "Content-Type": "multipart/form-data",
-        },
+      const res = await axios.post("http://localhost:5000/api/upload", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
       });
 
-      onDone && onDone(resp.data.record);
-    } catch (err) {
-      console.error(err);
-      alert("Upload failed: " + (err?.response?.data?.error || err.message));
-    } finally {
-      setLoading(false);
-    }
-  }
+      setTranscription(res.data.text);
+      audioChunksRef.current = [];
+    };
 
-  async function handleFileChange(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-    await uploadFile(file);
-  }
+    mediaRecorderRef.current.start();
+    setRecording(true);
+  };
+
+  const stopRecording = () => {
+    mediaRecorderRef.current.stop();
+    setRecording(false);
+  };
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-2">
-        <button
-          onClick={() => (recording ? stopRecording() : startRecording())}
-          className="px-4 py-2 rounded bg-blue-600 text-white"
-        >
-          {recording ? "Stop" : "Record"}
+    <div className="p-4 border rounded bg-white mt-4">
+      {!recording ? (
+        <button onClick={startRecording} className="bg-red-500 text-white px-4 py-2 rounded">
+          Start Recording
         </button>
-        <label className="px-4 py-2 rounded bg-gray-200 cursor-pointer">
-          <input
-            type="file"
-            accept="audio/*"
-            onChange={handleFileChange}
-            className="hidden"
-          />
-          Upload audio
-        </label>
-        {loading && (
-          <div className="text-sm text-gray-500">Transcribing...</div>
-        )}
-      </div>
+      ) : (
+        <button onClick={stopRecording} className="bg-green-500 text-white px-4 py-2 rounded">
+          Stop Recording
+        </button>
+      )}
     </div>
   );
 }
